@@ -1,5 +1,6 @@
 import express from "express";
 import { orderInputSchema } from "./types.js";
+import { orderbook , bookWithQuantity } from "./orderbook.js";
 
 const app = express();
 app.use(express.json());
@@ -63,7 +64,7 @@ function fillOrder(orderId: string , price: number , quantity: number , side: "b
                 executedQty += filledQuantity;
                 quantity -= filledQuantity;
                 if(order.quantity === 0) {
-                    orderbook.asks.splice(orderbook.asks.indexof(order) , 1);
+                    orderbook.asks.splice(orderbook.asks.indexOf(order) , 1);
                 }
                 if(bookWithQuantity.asks[price] === 0) {
                     delete bookWithQuantity.asks[price];
@@ -83,7 +84,7 @@ function fillOrder(orderId: string , price: number , quantity: number , side: "b
     }
 
     else {
-        
+
     }
 }
 
