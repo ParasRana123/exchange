@@ -32,9 +32,59 @@ app.post("/api/v1/order" , (req , res) => {
     })
 })
 
+interface Fill {
+    "price" : number,
+    "qty" : number,
+    "tradeId" : number
+}
+
 function fillOrder(orderId: string , price: number , quantity: number , side: "buy" | "sell" , kind: "limit" | "market") {
     const fills: Fill[] = [];
-    
+    const maxFillQuantity = getFillAmount(price , quantity , side);
+    let executedQty = 0;
+
+    if(type === "ioc" && maxFillQuantity < quantity) {
+        return { status: "rejected" , executedQty: maxFillQuantity , fills: [] };
+    }
+
+    if(side === "buy") {
+        // orderbook should be sorted before you try to fill them
+        orderbook.asks.forEach(order => {
+            if(order.price <= price && quantity > 0) {
+                const filledQuantity = Math.min(order.quantity , quantity);
+                console.log(filledQuantity);
+                order.quantity -= filledQuantity;
+                bookWithQuantity.asks[order.price] = (bookWithQuantity.asks[order.price] || 0) - filledQuantity;
+                fills.push({
+                    price: order.price,
+                    qty: order.quantity,
+                    tradeId: GLOBAL_TRADE_ID++
+                });
+                executedQty += filledQuantity;
+                quantity -= filledQuantity;
+                if(order.quantity === 0) {
+                    orderbook.asks.splice(orderbook.asks.indexof(order) , 1);
+                }
+                if(bookWithQuantity.asks[price] === 0) {
+                    delete bookWithQuantity.asks[price];
+                }
+            }
+        });
+
+        if(quantity != 0) {
+            orderbook.bids.push({
+                price,
+                quantity: quantity - executedQty,
+                side: "bid",
+                orderId
+            })
+            bookWithQuantity.asks[price] = (bookWithQuantity.asks[price] || 0) + (quantity);
+        }
+    }
+
+    else {
+        
+    }
 }
 
 app.listen(3000 , () => {
