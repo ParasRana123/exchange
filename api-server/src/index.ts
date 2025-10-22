@@ -1,5 +1,5 @@
 import express from "express";
-import { orderInputSchema } from "./types.js";
+import { OrderInputSchema } from "./types.js";
 import { orderbook , bookWithQuantity } from "./orderbook.js";
 
 const app = express();
@@ -11,7 +11,7 @@ const QUOTE_ASSET = "USD";
 let GLOBAL_TRADE_ID = 0;
 
 app.post("/api/v1/order" , (req , res) => {
-    const order = orderInputSchema.safeParse(req.body);
+    const order = OrderInputSchema.safeParse(req.body);
     if(!order.success) {
         res.status(400).send(order.error.message);
     }
@@ -24,7 +24,7 @@ app.post("/api/v1/order" , (req , res) => {
         res.status(400).send("Invalid base or quote asset");
         return;
     }
-    const { executedQty , fills } = fillOrder(orderId , price , quantity , side , kind);
+     const { executedQty, fills } = fillOrder(orderId, price, quantity, side, kind);
 
     res.send({
         orderId,
@@ -33,13 +33,17 @@ app.post("/api/v1/order" , (req , res) => {
     })
 })
 
+function getOrderId(): string {
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
 interface Fill {
     "price" : number,
     "qty" : number,
     "tradeId" : number
 }
 
-function fillOrder(orderId: string , price: number , quantity: number , side: "buy" | "sell" , kind: "limit" | "market") {
+function fillOrder(orderId: string, price: number, quantity: number, side: "buy" | "sell", type?: "ioc") : { status: "rejected" | "accepted"; executedQty: number; fills: Fill[] } {
     const fills: Fill[] = [];
     const maxFillQuantity = getFillAmount(price , quantity , side);
     let executedQty = 0;
@@ -84,8 +88,55 @@ function fillOrder(orderId: string , price: number , quantity: number , side: "b
     }
 
     else {
+        orderbook.bids.forEach(order => {
+            if(order.price >= price && quantity > 0) {
+                const filledQuantity = Math.min(order.quantity , quantity);
+                order.quantity -= quantity;
+                bookWithQuantity.bids[price] = (bookWithQuantity.bids[price] || 0) - filledQuantity;
+                fills.push({
+                    price: order.price,
+                    qty: filledQuantity,
+                    tradeId: GLOBAL_TRADE_ID++
+                });
+                executedQty += filledQuantity;
+                quantity -= filledQuantity;
+                if(order.quantity === 0) {
+                    orderbook.bids.splice(orderbook.bids.indexOf(order) , 1);
+                }
+                if(bookWithQuantity.bids[price] === 0) {
+                    delete bookWithQuantity.bids[price];
+                }
+            }
+        });
 
+        if(quantity !== 0) {
+            orderbook.asks.push({
+                price, 
+                quantity: quantity,
+                side: "asks",
+                orderId
+            });
+             bookWithQuantity.asks[price] = (bookWithQuantity.asks[price] || 0) + (quantity);
+        }
     }
+
+    return {
+        status: 'accepted',
+        executedQty,
+        fills
+    }
+}
+
+function getFillAmount(price: number , quantity: number , side: "buy" | "sell"): number {
+    let filled = 0;
+    if(side === "buy") {
+        orderbook.asks.forEach(order => {
+            if(order.price < price) {
+                filled += Math.min(order.quantity , quantity);
+            }
+        });
+    }
+    return filled;
 }
 
 app.listen(3000 , () => {
